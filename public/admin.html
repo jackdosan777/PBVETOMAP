@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PB Veto — Create Match</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+.link-row{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--border);
+  border-radius:4px;background:var(--panel-2);margin-bottom:8px;flex-wrap:wrap}
+.link-row .lr-tag{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+  padding:4px 9px;border-radius:3px;flex:none;min-width:92px;text-align:center}
+.lr-tag.ref{background:var(--accent-soft);color:var(--accent)}
+.lr-tag.a{background:var(--red-soft);color:var(--teamA)}
+.lr-tag.b{background:var(--blue-soft);color:var(--teamB)}
+.lr-tag.pub{background:var(--ok-soft);color:var(--ok)}
+.lr-tag.obs{background:var(--border-soft);color:var(--muted)}
+.link-row input{flex:1;min-width:220px;font-family:var(--mono);font-size:12px;padding:9px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="console-header" style="margin-top:16px">
+    <div class="eyebrow">POINT BLANK PRO TOUR</div>
+    <h1>REAL-TIME MAP VETO — CREATE MATCH</h1>
+    <p class="subtitle">Create a match, then send each team their own link. Teams need no account:
+      whoever opens a link acts as that role and nothing else.</p>
+  </header>
+
+  <section class="panel" id="formPanel">
+    <div class="panel-head"><h2>Match Setup</h2><span class="chip active">ADMIN</span></div>
+    <div class="panel-body">
+      <div style="max-width:300px"><label class="fl" for="adminKey">Admin Key</label>
+        <input type="text" id="adminKey" placeholder="ADMIN_KEY from the server env"></div>
+      <div style="max-width:300px;margin-top:14px"><label class="fl" for="fId">Match ID</label>
+        <input type="text" id="fId" value="PB-MATCH-001" maxlength="32"></div>
+      <div class="setup-grid" style="margin-top:14px">
+        <div><label class="fl" for="fA">Team A <span style="color:var(--teamA)">(top of bracket)</span></label>
+          <input type="text" id="fA" placeholder="Team A name" maxlength="30"></div>
+        <div class="setup-vs">VS</div>
+        <div><label class="fl" for="fB">Team B</label>
+          <input type="text" id="fB" placeholder="Team B name" maxlength="30"></div>
+      </div>
+      <div style="margin-top:18px"><label class="fl">Format</label><div class="fmt-row">
+        <button class="fmt-btn on" data-fmt="BO3">BO3<small>4 bans + 2 picks + 1 random</small></button>
+        <button class="fmt-btn" data-fmt="BO5">BO5<small>4 picks + 2 bans + 1 random</small></button>
+      </div></div>
+      <div id="formErr" class="hint warn" style="margin-top:14px"></div>
+    </div>
+    <div class="panel-head" style="border-top:1px solid var(--border-soft);border-bottom:none">
+      <button class="btn btn-primary btn-xl" id="btnCreate">CREATE MATCH</button>
+      <span class="lbl">The veto starts at Toss #1 as soon as the match is created</span>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="linksPanel">
+    <div class="panel-head"><h2>Access Links</h2><span class="chip ok" id="roomChip"></span></div>
+    <div class="panel-body">
+      <div class="notice"><div class="n-tag">SEND EACH LINK TO ONE PARTY ONLY</div>
+        <div class="n-body">Each link carries its own access token. Anyone holding a team link can act for that team,
+          so send them privately. The public and OBS links are read-only and safe to share.</div></div>
+      <div id="links" style="margin-top:14px"></div>
+    </div>
+    <div class="panel-head" style="border-top:1px solid var(--border-soft);border-bottom:none">
+      <button class="btn" id="btnNew">CREATE ANOTHER MATCH</button>
+      <a class="btn btn-primary" id="btnOpenRef" target="_blank" rel="noopener">OPEN REFEREE VIEW</a>
+    </div>
+  </section>
+
+  <footer class="ft">PB REAL-TIME MAP VETO SYSTEM</footer>
+</div>
+
+<script>
+(function(){
+  var fmt = "BO3";
+  var $ = function(id){ return document.getElementById(id); };
+
+  document.querySelectorAll(".fmt-btn").forEach(function(b){
+    b.addEventListener("click", function(){
+      document.querySelectorAll(".fmt-btn").forEach(function(x){ x.classList.remove("on"); });
+      b.classList.add("on"); fmt = b.getAttribute("data-fmt");
+    });
+  });
+
+  try {
+    var saved = localStorage.getItem("pbveto_admin_key");
+    if(saved) $("adminKey").value = saved;
+  } catch(e){}
+
+  $("btnCreate").addEventListener("click", function(){
+    var key = $("adminKey").value.trim();
+    try { localStorage.setItem("pbveto_admin_key", key); } catch(e){}
+    $("formErr").textContent = "";
+    $("btnCreate").disabled = true;
+
+    fetch("/api/match", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-key": key },
+      body: JSON.stringify({
+        id: $("fId").value.trim() || undefined,
+        format: fmt,
+        teamAName: $("fA").value.trim() || "TEAM A",
+        teamBName: $("fB").value.trim() || "TEAM B"
+      })
+    }).then(function(r){ return r.json().then(function(j){ return { ok: r.ok, j: j }; }); })
+      .then(function(out){
+        $("btnCreate").disabled = false;
+        if(!out.ok){ $("formErr").textContent = out.j.error || "Could not create the match."; return; }
+        showLinks(out.j);
+      })
+      .catch(function(e){
+        $("btnCreate").disabled = false;
+        $("formErr").textContent = "Network error: " + e.message;
+      });
+  });
+
+  function row(tag, cls, url){
+    return '<div class="link-row"><span class="lr-tag ' + cls + '">' + tag + '</span>' +
+      '<input type="text" readonly value="' + url + '">' +
+      '<button class="btn" data-copy="' + url + '">COPY</button>' +
+      '<a class="btn" href="' + url + '" target="_blank" rel="noopener">OPEN</a></div>';
+  }
+
+  function showLinks(d){
+    $("formPanel").classList.add("hidden");
+    $("linksPanel").classList.remove("hidden");
+    $("roomChip").textContent = "ROOM " + d.roomId;
+    $("links").innerHTML =
+      row("REFEREE", "ref", d.links.referee) +
+      row("TEAM A", "a", d.links.teamA) +
+      row("TEAM B", "b", d.links.teamB) +
+      row("PUBLIC", "pub", d.links.public) +
+      row("OBS", "obs", d.links.obs);
+    $("btnOpenRef").href = d.links.referee;
+  }
+
+  document.addEventListener("click", function(e){
+    var b = e.target.closest ? e.target.closest("[data-copy]") : null;
+    if(!b) return;
+    var url = b.getAttribute("data-copy");
+    if(navigator.clipboard) navigator.clipboard.writeText(url);
+    var old = b.textContent; b.textContent = "COPIED"; setTimeout(function(){ b.textContent = old; }, 1200);
+  });
+
+  $("btnNew").addEventListener("click", function(){
+    $("linksPanel").classList.add("hidden");
+    $("formPanel").classList.remove("hidden");
+  });
+})();
+</script>
+</body>
+</html>
